@@ -28,6 +28,7 @@ from ...configuration_utils import PretrainedConfig
 from ...modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 from ...modeling_utils import PreTrainedModel
 from ...utils import add_start_docstrings, add_start_docstrings_to_model_forward, logging, replace_return_docstrings
+from ..t5 import T5Model,T5EncoderModel,T5ForConditionalGeneration
 from ..auto.configuration_auto import AutoConfig
 from ..auto.modeling_auto import AutoModel, AutoModelForCausalLM
 from .configuration_vision_encoder_decoder import VisionEncoderDecoderConfig
@@ -192,7 +193,7 @@ class VisionEncoderDecoderModel(PreTrainedModel):
             encoder = AutoModel.from_config(config.encoder)
 
         if decoder is None:
-            decoder = AutoModelForCausalLM.from_config(config.decoder)
+            decoder = T5ForConditionalGeneration(config=config.decoder)
 
         self.encoder = encoder
         self.decoder = decoder
@@ -507,7 +508,7 @@ class VisionEncoderDecoderModel(PreTrainedModel):
                     "`decoder_config` to `.from_encoder_decoder_pretrained(...)`"
                 )
 
-            decoder = AutoModelForCausalLM.from_pretrained(decoder_pretrained_model_name_or_path, **kwargs_decoder)
+            decoder = T5ForConditionalGeneration.from_pretrained(decoder_pretrained_model_name_or_path, **kwargs_decoder)
 
         # instantiate config with corresponding kwargs
         config = VisionEncoderDecoderConfig.from_encoder_decoder_configs(encoder.config, decoder.config, **kwargs)
@@ -609,13 +610,14 @@ class VisionEncoderDecoderModel(PreTrainedModel):
         decoder_outputs = self.decoder(
             input_ids=decoder_input_ids,
             attention_mask=decoder_attention_mask,
-            encoder_hidden_states=encoder_hidden_states,
-            encoder_attention_mask=encoder_attention_mask,
+            decoder_input_ids = decoder_input_ids,
+            # encoder_hidden_states=encoder_hidden_states,
+            # encoder_attention_mask=encoder_attention_mask,
             inputs_embeds=decoder_inputs_embeds,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
-            use_cache=use_cache,
-            past_key_values=past_key_values,
+            # use_cache=use_cache, ##
+            # past_key_values=past_key_values, ##
             return_dict=return_dict,
             **kwargs_decoder,
         )
@@ -637,8 +639,8 @@ class VisionEncoderDecoderModel(PreTrainedModel):
             loss=loss,
             logits=decoder_outputs.logits,
             past_key_values=decoder_outputs.past_key_values,
-            decoder_hidden_states=decoder_outputs.hidden_states,
-            decoder_attentions=decoder_outputs.attentions,
+            #decoder_hidden_states=decoder_outputs.hidden_states,
+            #decoder_attentions=decoder_outputs.attentions,
             cross_attentions=decoder_outputs.cross_attentions,
             encoder_last_hidden_state=encoder_outputs.last_hidden_state,
             encoder_hidden_states=encoder_outputs.hidden_states,
@@ -649,19 +651,18 @@ class VisionEncoderDecoderModel(PreTrainedModel):
         return shift_tokens_right(labels, self.config.pad_token_id, self.config.decoder_start_token_id)
 
     def prepare_inputs_for_generation(
-        self, input_ids, past_key_values=None, attention_mask=None, use_cache=None, encoder_outputs=None, **kwargs
+        self, input_ids, past=None, attention_mask=None, use_cache=None, encoder_outputs=None, **kwargs
     ):
-        decoder_inputs = self.decoder.prepare_inputs_for_generation(input_ids, past_key_values=past_key_values)
-        decoder_attention_mask = decoder_inputs["attention_mask"] if "attention_mask" in decoder_inputs else None
-        input_dict = {
-            "attention_mask": attention_mask,
-            "decoder_attention_mask": decoder_attention_mask,
-            "decoder_input_ids": decoder_inputs["input_ids"],
+        if past is not None:
+            input_ids = input_ids[:, -1:]
+
+        return {
+            "decoder_input_ids": input_ids,
+            "past_key_values": past,
             "encoder_outputs": encoder_outputs,
-            "past_key_values": decoder_inputs["past_key_values"],
+            "attention_mask": attention_mask,
             "use_cache": use_cache,
         }
-        return input_dict
 
     def resize_token_embeddings(self, *args, **kwargs):
         raise NotImplementedError(
