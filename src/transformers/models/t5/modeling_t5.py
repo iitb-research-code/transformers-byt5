@@ -1718,7 +1718,7 @@ class T5ForConditionalGeneration(T5PreTrainedModel):
         if encoder_outputs is None:
             # Convert encoder inputs in embeddings if needed
             encoder_outputs = self.encoder(
-                embedding_output,
+                pixel_values,
                 head_mask=head_mask,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
