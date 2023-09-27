@@ -1713,10 +1713,6 @@ class T5ForConditionalGeneration(T5PreTrainedModel):
 
         if pixel_values is None:
             raise ValueError("You have to specify pixel_values")
-        
-        embedding_output = self.encoder.embeddings(
-            pixel_values, bool_masked_pos=bool_masked_pos, interpolate_pos_encoding=interpolate_pos_encoding
-        )
 
         # Encode if needed (training, first prediction pass)
         if encoder_outputs is None:
