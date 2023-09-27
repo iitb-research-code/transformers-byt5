@@ -19,7 +19,7 @@ import copy
 import math
 import os
 import warnings
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Dict, Set
 
 import torch
 from torch import nn
@@ -30,6 +30,7 @@ from ...activations import ACT2FN
 from ...modeling_outputs import (
     BaseModelOutput,
     BaseModelOutputWithPastAndCrossAttentions,
+    ImageClassifierOutput,
     Seq2SeqLMOutput,
     Seq2SeqModelOutput,
     Seq2SeqQuestionAnsweringModelOutput,
@@ -48,6 +49,8 @@ from ...utils import (
 )
 from ...utils.model_parallel_utils import assert_device_map, get_device_map
 from .configuration_t5 import T5Config
+from ..vit.configuration_vit import ViTConfig
+from ..vit.modeling_vit import ViTModel
 
 
 logger = logging.get_logger(__name__)
@@ -1405,7 +1408,7 @@ class T5Model(T5PreTrainedModel):
     @add_start_docstrings(DEPARALLELIZE_DOCSTRING)
     def deparallelize(self):
         warnings.warn(
-            "Like `parallelize`, `deparallelize` is deprecated and will be removed in v5 of Transformers.",
+            "Like `parallelize`, `deparallelize` is deprecated and will be  removed in v5 of Transformers.",
             FutureWarning,
         )
         self.encoder.deparallelize()
@@ -1553,6 +1556,8 @@ class T5Model(T5PreTrainedModel):
         )
 
 
+#experiment_1: encoder->ViTModel class
+
 @add_start_docstrings("""T5 Model with a `language modeling` head on top.""", T5_START_DOCSTRING)
 class T5ForConditionalGeneration(T5PreTrainedModel):
     _keys_to_ignore_on_load_unexpected = [
@@ -1570,7 +1575,7 @@ class T5ForConditionalGeneration(T5PreTrainedModel):
         encoder_config.is_decoder = False
         encoder_config.use_cache = False
         encoder_config.is_encoder_decoder = False
-        self.encoder = T5Stack(encoder_config, self.shared)
+        self.encoder = ViTModel.from_pretrained("google/vit-base-patch16-224")
 
         decoder_config = copy.deepcopy(config)
         decoder_config.is_decoder = True
@@ -1596,13 +1601,13 @@ class T5ForConditionalGeneration(T5PreTrainedModel):
             " {'encoder.block.0': 0, 'encoder.block.1': 1, ...}",
             FutureWarning,
         )
-        self.device_map = (
-            get_device_map(len(self.encoder.block), range(torch.cuda.device_count()))
-            if device_map is None
-            else device_map
-        )
-        assert_device_map(self.device_map, len(self.encoder.block))
-        self.encoder.parallelize(self.device_map)
+        # self.device_map = (
+        #     get_device_map(len(self.encoder.block), range(torch.cuda.device_count()))
+        #     if device_map is None
+        #     else device_map
+        # )
+        # assert_device_map(self.device_map, len(self.encoder.block))
+        # self.encoder.parallelize(self.device_map)
         self.decoder.parallelize(self.device_map)
         self.lm_head = self.lm_head.to(self.decoder.first_device)
         self.model_parallel = True
@@ -1613,9 +1618,9 @@ class T5ForConditionalGeneration(T5PreTrainedModel):
             "Like `parallelize`, `deparallelize` is deprecated and will be removed in v5 of Transformers.",
             FutureWarning,
         )
-        self.encoder.deparallelize()
+        # self.encoder.deparallelize()
         self.decoder.deparallelize()
-        self.encoder = self.encoder.to("cpu")
+        # self.encoder = self.encoder.to("cpu")
         self.decoder = self.decoder.to("cpu")
         self.lm_head = self.lm_head.to("cpu")
         self.model_parallel = False
@@ -1647,6 +1652,9 @@ class T5ForConditionalGeneration(T5PreTrainedModel):
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,
+        pixel_values: Optional[torch.Tensor] = None,
+        bool_masked_pos: Optional[torch.BoolTensor] = None,
+        interpolate_pos_encoding: Optional[bool] = None,
         attention_mask: Optional[torch.FloatTensor] = None,
         decoder_input_ids: Optional[torch.LongTensor] = None,
         decoder_attention_mask: Optional[torch.BoolTensor] = None,
@@ -1703,13 +1711,18 @@ class T5ForConditionalGeneration(T5PreTrainedModel):
                 warnings.warn(__HEAD_MASK_WARNING_MSG, FutureWarning)
                 decoder_head_mask = head_mask
 
+        if pixel_values is None:
+            raise ValueError("You have to specify pixel_values")
+        
+        embedding_output = self.encoder.embeddings(
+            pixel_values, bool_masked_pos=bool_masked_pos, interpolate_pos_encoding=interpolate_pos_encoding
+        )
+
         # Encode if needed (training, first prediction pass)
         if encoder_outputs is None:
             # Convert encoder inputs in embeddings if needed
             encoder_outputs = self.encoder(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                inputs_embeds=inputs_embeds,
+                embedding_output,
                 head_mask=head_mask,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
