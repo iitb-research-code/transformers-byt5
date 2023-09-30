@@ -1651,7 +1651,6 @@ class T5ForConditionalGeneration(T5PreTrainedModel):
     @replace_return_docstrings(output_type=Seq2SeqLMOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
         pixel_values: Optional[torch.Tensor] = None,
         bool_masked_pos: Optional[torch.BoolTensor] = None,
         interpolate_pos_encoding: Optional[bool] = None,
@@ -1711,11 +1710,9 @@ class T5ForConditionalGeneration(T5PreTrainedModel):
                 warnings.warn(__HEAD_MASK_WARNING_MSG, FutureWarning)
                 decoder_head_mask = head_mask
 
-        if pixel_values is None:
-            raise ValueError("You have to specify pixel_values")
-
-        # Encode if needed (training, first prediction pass)
         if encoder_outputs is None:
+            if pixel_values is None:
+                raise ValueError("You have to specify pixel_values")
             # Convert encoder inputs in embeddings if needed
             encoder_outputs = self.encoder(
                 pixel_values,
@@ -1796,7 +1793,7 @@ class T5ForConditionalGeneration(T5PreTrainedModel):
 
         return Seq2SeqLMOutput(
             loss=loss,
-            logits=lm_logits,
+            logits=decoder_outputs.logits,#lm_logits
             past_key_values=decoder_outputs.past_key_values,
             decoder_hidden_states=decoder_outputs.hidden_states,
             decoder_attentions=decoder_outputs.attentions,
