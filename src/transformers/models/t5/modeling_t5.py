@@ -1793,7 +1793,7 @@ class T5ForConditionalGeneration(T5PreTrainedModel):
 
         return Seq2SeqLMOutput(
             loss=loss,
-            logits=decoder_outputs.logits,#lm_logits
+            logits=lm_logits,#lm_logits
             past_key_values=decoder_outputs.past_key_values,
             decoder_hidden_states=decoder_outputs.hidden_states,
             decoder_attentions=decoder_outputs.attentions,
